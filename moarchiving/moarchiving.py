@@ -93,7 +93,9 @@ class BiobjectiveNondominatedSortedList(list):
     def __init__(self,
                  list_of_f_pairs=None,
                  reference_point=None,
-                 sort=sorted):
+                 sort=sorted,
+                 solutions=None
+                 ):
         """`list_of_f_pairs` does not need to be sorted.
 
         f-pairs beyond the `reference_point` are pruned away. The
@@ -120,6 +122,9 @@ class BiobjectiveNondominatedSortedList(list):
                                  " as first element" % str(list_of_f_pairs[0]))
             list.__init__(self, sort(list_of_f_pairs) if sort else list_of_f_pairs)
             # super(BiobjectiveNondominatedSortedList, self).__init__(sort(list_of_f_pairs))
+
+        self.solutions = solutions
+
         if reference_point is not None:
             self.reference_point = list(reference_point)
         else:
@@ -133,7 +138,7 @@ class BiobjectiveNondominatedSortedList(list):
         self._set_HV()
         self.make_expensive_asserts and self._asserts()
 
-    def add(self, f_pair):
+    def add(self, f_pair, solution=None):
         """insert `f_pair` in `self` if it is not (weakly) dominated.
 
         Return index at which the insertion took place or `None`. The
@@ -160,11 +165,11 @@ class BiobjectiveNondominatedSortedList(list):
             return None
         assert idx == len(self) or not f_pair == self[idx]
         # here f_pair now is non-dominated
-        self._add_at(idx, f_pair)
+        self._add_at(idx, f_pair, solution)
         # self.make_expensive_asserts and self._asserts()
         return idx
 
-    def _add_at(self, idx, f_pair):
+    def _add_at(self, idx, f_pair, solution=None):
         """add `f_pair` at position `idx` and remove dominated elements.
 
         This method assumes that `f_pair` is not weakly dominated by
@@ -174,6 +179,10 @@ class BiobjectiveNondominatedSortedList(list):
         if idx == len(self) or f_pair[1] > self[idx][1]:
             self.insert(idx, f_pair)
             self._add_HV(idx)
+
+            if solution is not None:
+                self.solutions.insert(idx, solution)
+
             # self.make_expensive_asserts and self._asserts()
             return
         # here f_pair now dominates self[idx]
@@ -187,6 +196,10 @@ class BiobjectiveNondominatedSortedList(list):
         self._removed = self[idx:idx2]
         self[idx] = f_pair  # on long lists [.] is much cheaper than insert
         del self[idx + 1:idx2]  # can make `add` 20x faster
+
+        if self.solutions is not None:
+            del self.solutions[idx + 1:idx2]
+
         self._add_HV(idx)
         assert len(self) >= 1
         # self.make_expensive_asserts and self._asserts()
@@ -226,7 +239,7 @@ class BiobjectiveNondominatedSortedList(list):
         self._removed = [self[idx]]
         del self[idx]  # == list.remove(self, f_pair)
 
-    def add_list(self, list_of_f_pairs):
+    def add_list(self, list_of_f_pairs, solution=None):
         """insert a list of f-pairs which doesn't need to be sorted.
 
         This is just a shortcut for looping over `add`, but `discarded`
@@ -251,9 +264,15 @@ class BiobjectiveNondominatedSortedList(list):
         a small performance benefit.
         """
         removed = []
+        solutions_available = solutions is not None
         # should we better create a non-dominated list and do a merge?
         for f_pair in list_of_f_pairs:
-            if self.add(f_pair) is not None:
+            if solutions_available:
+                solution = solutions[ii]
+            else:
+                solution = None
+
+            if self.add(f_pair, solution=solution) is not None:
                 removed += [self._removed]  # slightly faster than .extend
         self._removed = removed  # could contain elements of `list_of_f_pairs`
         self.make_expensive_asserts and self._asserts()
@@ -764,6 +783,10 @@ class BiobjectiveNondominatedSortedList(list):
             i += 1
         removed += self[0:i]
         del self[0:i]
+
+        if self.solutions is not None:
+            del self.solutions[0:i]
+        
         i = 1
         while i < len(self):
             i0 = i
@@ -788,6 +811,10 @@ class BiobjectiveNondominatedSortedList(list):
                         break
             removed += self[i0r:ir]
             del self[i0:i]
+
+            if self.solutions is not None:
+                del self.solutions[0:i]
+
             i = i0 + 1
         self._removed = removed  # [p for p in removed if p not in self]
         if self.maintain_contributing_hypervolumes:
